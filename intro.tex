@@ -1,0 +1,35 @@
+\section{Introduction}
+
+%\todo[inline]{\\
+% What is programmable scheduling? \\
+%% Why we need programmable scheduling? \\
+% Why isn't scheduling already programmable? \\
+% Why FPGAs? \\
+%}
+
+There is much talk about using the P4 language~\cite{p4:2014} to define how packets are processed by a programmable switch~\cite{p4org, p4runtime, Stratum}. P4 is being used by networking researchers and the networking industry to define the forwarding pipeline of software switches~\cite{Pisces}, FPGAs~\cite{SDNet}, programmable ASICs~\cite{Tofino, Xpliant} and NICs~\cite{Netronome}. To date, though, the P4 language has been limited to defining how packets are parsed, and the `match + action' pipeline. Much less attention has been focused on traffic management and how individual packets are scheduled. For example, programmable ASICs allow a packet scheduling algorithm to be chosen from among a fixed, popular set (e.g. strict priorities, WFQ, fixed-rate), but do not allow the P4 programmer to define their own packet scheduling algorithm. Typically, switches and routers have fixed scheduling policies that have some degree of control (e.g., priorities, weights), but not in terms of defining new scheduling algorithms.  This means adding new algorithms involves long design cycle times, which suppresses innovation in algorithms and hinders customization for specific use cases. It has proven hard to define an abstract forwarding model for traffic management, that does not hamper efficient implementation at high line rates.  So traffic managers have traditionally been carefully hand-crafted designs.
+
+The authors of~\cite{pifo2016} proposed using the PIFO queue as a general abstraction of packet scheduling. The advantage of this approach is that it provides both an abstract model (that can be programmed by extending the P4 language) as well as a potentially efficient implementation. Originally introduced in~\cite{pifo1999}, PIFO is an abstract queueing discipline that includes, as special cases, most of the commonly used scheduling algorithms, such as strict priority queues, DRR, minimum data rate, etc. In~\cite{pifo2016}, the authors extended the single PIFO queue to include hierarchical scheduling algorithms; for example, two strict priority queueing classes, where the flows in each class are scheduled using WFQ. 
+
+In a basic PIFO queue, the departure order (or {\em rank}) of a packet is calculated when it arrives, and it is ``pushed-in'' to its  correct location in the queue. Packets are always dequeued from the head. In the paper, the scheduling and shaping transactions are expressed using a Domino program ~\cite{domino:2015} that calculates a rank for the packet insertion point into the queue.  The PIFO queue was implemented as a series of registers that are compared in parallel; they can be shifted, starting from any position, to make room for a new packet to be inserted.  While a register-based implementation is suitable for ASICs, it would result in a small-size queue with limited scalability when targeted to field-programmable gate arrays (FPGA) due to the timing constraints of programmable fabrics; hence our motivation to devise an implementation that would be more scalable in FPGAs.
+
+Our PIFO queue design uses {\em block random access memory} (BRAM), which is an abundant resource in FPGAs.  BRAMs require sequential memory accesses, making them less parallel than registers, but require much fewer wiring resources.   When implemented using BRAM, the search, insert, and remove operations require multiple memory accesses. 
+
+To mitigate the increased access times, our design is based on a deterministic skip list, to insert new packets quickly and within a bounded time. Our design uses multiple skip lists in parallel to (always) meet the 10Gb/s line-rate. It also uses a small register-based cache to make sure packets are available at the head of the queue which ensures the PIFO queue is work-conserving at all times. We parameterized each major block to achieve different performance targets while scaling resources conveniently.
+
+We first wrote a behavioral and modular Python model as a proof of concept.  We then used the SimPy package ~\cite{SimPy}, a discrete event simulation library for Python, to model the PIFO operations (search, insertion and removal) into the block RAMs. A key design parameter is the number of memory accesses required to meet line-rate. We varied the design parameters to study their effect on performance using Python SimPy and chose an optimal set of parameters taking into account FPGA resource utilization.  
+
+In the final design step we translated the Python SimPy code into Verilog, which was straightforward and automatic since the processing logic and memory accesses were already designed, implemented, and verified.  We integrated the Verilog implementation with an existing P4 Switch and targeted an FPGA. 
+
+FPGAs are in the spirit of programmable networking, being arbitrarily programmable hardware.  As FPGAs have acquired hardened blocks for area-consuming functions like serial interfaces and memories, and ASICs have acquired programmable logic and CPU like features, the traditional silicon utilization gap between FPGA and ASIC has narrowed from around 10-20x to 2-3x.  Use of FPGAs is consistent with the spirit of innovation and experimentation with traffic management features, notably scheduling.
+
+The main contributions of this paper are:
+\begin{enumerate}
+\item A practical implementation of a PIFO on an FPGA.
+\item Furthermore, this is the first "true" PIFO design where no assumptions are made about ranks and flows. That is, each element in the PIFO can belong to a separate flow, which provides much more fine grained control over scheduling order than previous proposals.
+\item First demonstrations of actually using a PIFO to implement various scheduling algorithms, along with their performance reports.
+\item Our design provides a demonstration of how to build line-rate systems from a small fast cache and a large slow memory module. This approach is orthogonal to the typical approach of using heavy pipelining and can make implementation simple and scalable.
+\item We contribute a complete system to the community with verified end-to-end functionality, as well as a software environment to reproduce the key results presented in this paper.
+\end{enumerate}
+
+In the following sections we describe scheduling in general in Section~2 and the PIFO queue in Section~3.  In Section~4, we describe our implementations and the justification for our design decisions.  Section~5 contains the evaluation results from the Verilog simulations. In Section~6, we describe possible extensions to our work and in section~7 we position our design relative to other related work.
